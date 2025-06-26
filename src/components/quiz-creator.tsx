@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, ChangeEvent } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { generateQuizQuestions } from '@/ai/flows/generate-quiz-questions';
+import { generateQuizQuestionsFlow } from '@/ai/flows/generate-quiz-questions';
+import { getPdfTextInChunks } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -14,12 +15,13 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import type { QuizQuestion } from '@/lib/types';
-import { Loader2, Wand2, PlusCircle } from 'lucide-react';
+import { parseAnswerKey } from '@/lib/utils';
+import { Loader2, Wand2, PlusCircle, UploadCloud } from 'lucide-react';
 
 type QuizCreatorProps = {
-  context: string;
   onAddQuestion: (question: QuizQuestion) => void;
   onGeneratedQuestions: (questions: QuizQuestion[]) => void;
+  clearExistingQuestions: () => void;
 };
 
 const manualQuestionSchema = z.object({
@@ -28,8 +30,10 @@ const manualQuestionSchema = z.object({
   answerIndex: z.string().min(1, 'You must select a correct answer.'),
 });
 
-export function QuizCreator({ context, onAddQuestion, onGeneratedQuestions }: QuizCreatorProps) {
+export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExistingQuestions }: QuizCreatorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [answerKeyFile, setAnswerKeyFile] = useState<File | null>(null);
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof manualQuestionSchema>>({
@@ -41,7 +45,7 @@ export function QuizCreator({ context, onAddQuestion, onGeneratedQuestions }: Qu
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields } = useFieldArray({
     control: form.control,
     name: "options"
   });
@@ -57,29 +61,80 @@ export function QuizCreator({ context, onAddQuestion, onGeneratedQuestions }: Qu
     form.reset();
   };
 
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>, setFile: (file: File | null) => void) => {
+    if (e.target.files) {
+      setFile(e.target.files[0]);
+    }
+  };
+
   const handleGenerate = async () => {
-    if (!context.trim()) {
+    if (!pdfFile) {
       toast({
-        title: 'Content is empty',
-        description: 'Please paste some document content first.',
+        title: 'No PDF file selected',
+        description: 'Please upload a PDF document to generate questions from.',
         variant: 'destructive',
       });
       return;
     }
+    
     setIsGenerating(true);
+    clearExistingQuestions(); // Clear out old questions before generating new ones
+    let generatedCount = 0;
+
     try {
-      const generated = await generateQuizQuestions({ pdfText: context });
-      const newQuestions = generated.map(q => ({ ...q, id: crypto.randomUUID() }));
-      onGeneratedQuestions(newQuestions);
+      // 1. Read files on the client
+      const reader = new FileReader();
+      const pdfPromise = new Promise<string>((resolve, reject) => {
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          resolve(result.split(',')[1]); // Get base64 part
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(pdfFile);
+      });
+
+      const answerKeyPromise = answerKeyFile ? answerKeyFile.text() : Promise.resolve(null);
+      const [pdfBase64, answerKeyText] = await Promise.all([pdfPromise, answerKeyPromise]);
+      const answerKey = answerKeyText ? parseAnswerKey(answerKeyText) : null;
+
+      // 2. Get text chunks from server
+      const chunks = await getPdfTextInChunks(pdfBase64);
+
+      // 3. Process chunks one by one to simulate streaming
+      for (const chunk of chunks) {
+        const generated = await generateQuizQuestionsFlow({ pdfText: chunk });
+        
+        let newQuestions = generated.map(q => ({ ...q, id: crypto.randomUUID() }));
+
+        // 4. Apply answer key if it exists
+        if (answerKey) {
+            newQuestions = newQuestions.map(q => {
+            const questionNumber = generatedCount + 1;
+            const correctAnswerLetter = answerKey[questionNumber];
+            if (correctAnswerLetter) {
+              const answerIndex = 'ABCD'.indexOf(correctAnswerLetter);
+              if (answerIndex !== -1 && q.options[answerIndex]) {
+                return { ...q, answer: q.options[answerIndex] };
+              }
+            }
+            generatedCount++;
+            return q;
+          });
+        }
+        
+        if (newQuestions.length > 0) {
+            onGeneratedQuestions(newQuestions);
+        }
+      }
       toast({
         title: 'Success!',
-        description: `Successfully generated ${newQuestions.length} questions.`,
+        description: `Successfully finished generating questions.`,
       });
     } catch (error) {
       console.error(error);
       toast({
         title: 'Generation Failed',
-        description: 'Could not generate questions. Please try again.',
+        description: error instanceof Error ? error.message : 'Could not generate questions. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -91,18 +146,29 @@ export function QuizCreator({ context, onAddQuestion, onGeneratedQuestions }: Qu
     <div className="space-y-8">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Wand2 className="text-primary" /> Generate with AI</CardTitle>
-          <CardDescription>Let AI create questions from your document content.</CardDescription>
+          <CardTitle className="flex items-center gap-2"><UploadCloud className="text-primary" /> Generate from Document</CardTitle>
+          <CardDescription>Upload a PDF and an optional answer key to generate a quiz with AI.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Button onClick={handleGenerate} disabled={isGenerating || !context}>
+        <CardContent className="space-y-4">
+           <div className="space-y-2">
+            <Label htmlFor="pdf-upload">PDF Document</Label>
+            <Input id="pdf-upload" type="file" accept=".pdf" onChange={e => handleFileChange(e, setPdfFile)} />
+           </div>
+           <div className="space-y-2">
+            <Label htmlFor="answer-key-upload">Answer Key (Optional, .txt)</Label>
+            <Input id="answer-key-upload" type="file" accept=".txt" onChange={e => handleFileChange(e, setAnswerKeyFile)} />
+           </div>
+          <Button onClick={handleGenerate} disabled={isGenerating || !pdfFile}>
             {isGenerating ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Generating...
               </>
             ) : (
-              'Generate Questions'
+              <>
+                <Wand2 className="mr-2 h-4 w-4" />
+                Generate Questions
+              </>
             )}
           </Button>
         </CardContent>

@@ -2,16 +2,17 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle2, XCircle, RotateCw } from 'lucide-react';
+import { CheckCircle2, XCircle, RotateCw, PlusCircle } from 'lucide-react';
 
 type QuizResultsProps = {
   score: number;
   totalQuestions: number;
   onRestart: () => void;
+  onCreateNew: () => void;
 };
 
-export function QuizResults({ score, totalQuestions, onRestart }: QuizResultsProps) {
-    const percentage = Math.round((score / totalQuestions) * 100);
+export function QuizResults({ score, totalQuestions, onRestart, onCreateNew }: QuizResultsProps) {
+    const percentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
 
   return (
     <Card>
@@ -21,16 +22,22 @@ export function QuizResults({ score, totalQuestions, onRestart }: QuizResultsPro
       </CardHeader>
       <CardContent className="text-center space-y-6">
         <div className="flex justify-center items-center">
-            {percentage > 70 ? <CheckCircle2 className="h-24 w-24 text-green-500" /> : <XCircle className="h-24 w-24 text-destructive" /> }
+            {percentage >= 70 ? <CheckCircle2 className="h-24 w-24 text-green-500" /> : <XCircle className="h-24 w-24 text-destructive" /> }
         </div>
         <p className="text-4xl font-bold">
           {score} / {totalQuestions}
         </p>
         <p className="text-xl text-muted-foreground">You got {percentage}% correct.</p>
-        <Button onClick={onRestart}>
-          <RotateCw className="mr-2 h-4 w-4" />
-          Try Again
-        </Button>
+        <div className="flex justify-center gap-4">
+            <Button onClick={onRestart}>
+              <RotateCw className="mr-2 h-4 w-4" />
+              Try Again
+            </Button>
+            <Button onClick={onCreateNew} variant="outline">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Create New Quiz
+            </Button>
+        </div>
       </CardContent>
     </Card>
   );
