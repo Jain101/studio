@@ -68,12 +68,12 @@ export function QuizCreator({ context, onAddQuestion, onGeneratedQuestions }: Qu
     }
     setIsGenerating(true);
     try {
-      const generated = await generateQuizQuestions({ pdfText: context, numQuestions: 5 });
+      const generated = await generateQuizQuestions({ pdfText: context });
       const newQuestions = generated.map(q => ({ ...q, id: crypto.randomUUID() }));
       onGeneratedQuestions(newQuestions);
       toast({
         title: 'Success!',
-        description: 'AI-generated questions have been added.',
+        description: `Successfully generated ${newQuestions.length} questions.`,
       });
     } catch (error) {
       console.error(error);
@@ -102,7 +102,7 @@ export function QuizCreator({ context, onAddQuestion, onGeneratedQuestions }: Qu
                 Generating...
               </>
             ) : (
-              'Generate 5 Questions'
+              'Generate Questions'
             )}
           </Button>
         </CardContent>
