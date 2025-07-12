@@ -1,18 +1,20 @@
+
 "use client";
 
 import type { QuizQuestion } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, Play, FileQuestion } from 'lucide-react';
+import { ArrowLeft, Play, FileQuestion, FileText } from 'lucide-react';
 
 type QuizListProps = {
   questions: QuizQuestion[];
+  pdfName: string;
   onStartQuiz: () => void;
   onBack: () => void;
 };
 
-export function QuizList({ questions, onStartQuiz, onBack }: QuizListProps) {
+export function QuizList({ questions, pdfName, onStartQuiz, onBack }: QuizListProps) {
   return (
     <div className="w-full">
       <Card className="w-full">
@@ -21,10 +23,12 @@ export function QuizList({ questions, onStartQuiz, onBack }: QuizListProps) {
             <Button variant="ghost" size="icon" onClick={onBack}>
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div className="text-center">
+            <div className="text-center flex-grow">
               <CardTitle className="text-2xl">Your Quiz is Ready!</CardTitle>
-              <CardDescription>
-                Generated {questions.length} questions. Review them below or start the quiz.
+              <CardDescription className="flex items-center justify-center gap-2 mt-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium truncate max-w-sm">{pdfName}</span> -
+                <span>{questions.length} questions</span>
               </CardDescription>
             </div>
             <div className="w-10"></div>

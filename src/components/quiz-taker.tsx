@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
-import type { QuizQuestion } from '@/lib/types';
+import type { QuizQuestion, UserAnswers } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -11,36 +12,32 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 type QuizTakerProps = {
   questions: QuizQuestion[];
-  onFinish: (score: number) => void;
+  onFinish: (score: number, userAnswers: UserAnswers) => void;
 };
 
 export function QuizTaker({ questions, onFinish }: QuizTakerProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
-  const [score, setScore] = useState(0);
-
+  const [selectedAnswers, setSelectedAnswers] = useState<UserAnswers>({});
+  
   const isQuizFinished = currentQuestionIndex === questions.length;
   const currentQuestion = questions[currentQuestionIndex];
-  const selectedAnswer = selectedAnswers[currentQuestionIndex];
-
+  
   useEffect(() => {
-    if (isQuizFinished) {
-      // Calculate score
+    if (isQuizFinished && questions.length > 0) {
       let finalScore = 0;
-      questions.forEach((q, index) => {
-        if (q.answer === selectedAnswers[index]) {
+      questions.forEach((q) => {
+        if (q.answer === selectedAnswers[q.id]) {
           finalScore++;
         }
       });
-      setScore(finalScore);
-      // Delay to allow animation before calling onFinish
-      setTimeout(() => onFinish(finalScore), 500);
+      
+      setTimeout(() => onFinish(finalScore, selectedAnswers), 500);
     }
   }, [isQuizFinished, questions, selectedAnswers, onFinish]);
 
   const handleSelectAnswer = (answer: string) => {
-    if (selectedAnswer) return;
-    setSelectedAnswers(prev => ({ ...prev, [currentQuestionIndex]: answer }));
+    if (selectedAnswers[currentQuestion.id]) return; // Answer already selected for current question
+    setSelectedAnswers(prev => ({ ...prev, [currentQuestion.id]: answer }));
     
     // Auto-advance to next question
     setTimeout(() => {
@@ -49,6 +46,10 @@ export function QuizTaker({ questions, onFinish }: QuizTakerProps) {
   };
 
   const progressValue = (currentQuestionIndex / questions.length) * 100;
+  
+  if (!currentQuestion && !isQuizFinished) {
+    return <div>Loading quiz...</div>;
+  }
 
   return (
     <div className="space-y-6 w-full">
@@ -62,7 +63,7 @@ export function QuizTaker({ questions, onFinish }: QuizTakerProps) {
 
       <div className="relative h-[450px]">
         <AnimatePresence mode="wait">
-        {!isQuizFinished && (
+        {!isQuizFinished && currentQuestion && (
           <motion.div
             key={currentQuestionIndex}
             initial={{ opacity: 0, x: 50 }}
@@ -77,9 +78,10 @@ export function QuizTaker({ questions, onFinish }: QuizTakerProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 {currentQuestion.options.map((option, index) => {
-                  const isSelected = selectedAnswer === option;
+                  const selectedAnswerForThis = selectedAnswers[currentQuestion.id];
+                  const isSelected = selectedAnswerForThis === option;
                   const isCorrect = option === currentQuestion.answer;
-                  const showFeedback = selectedAnswer !== undefined;
+                  const showFeedback = selectedAnswerForThis !== undefined;
                   
                   return (
                     <motion.div
@@ -89,9 +91,9 @@ export function QuizTaker({ questions, onFinish }: QuizTakerProps) {
                       transition={{ duration: 0.2, delay: 0.1 * index }}
                       className={cn(
                           "flex items-center space-x-3 p-4 border rounded-lg transition-all duration-300",
-                          showFeedback && isSelected && isCorrect && "bg-green-100 border-green-400 text-green-800 scale-105 shadow-lg",
-                          showFeedback && isSelected && !isCorrect && "bg-red-100 border-red-400 text-red-800 scale-105 shadow-lg",
-                          showFeedback && !isSelected && isCorrect && "bg-green-100 border-green-400 text-green-800",
+                          showFeedback && isSelected && isCorrect && "bg-green-100 dark:bg-green-900/30 border-green-400 text-green-800 dark:text-green-300 scale-105 shadow-lg",
+                          showFeedback && isSelected && !isCorrect && "bg-red-100 dark:bg-red-900/30 border-red-400 text-red-800 dark:text-red-300 scale-105 shadow-lg",
+                          showFeedback && !isSelected && isCorrect && "bg-green-100 dark:bg-green-900/30 border-green-400 text-green-800 dark:text-green-300",
                           !showFeedback && "hover:bg-primary/5 hover:border-primary/50 cursor-pointer"
                       )}
                       onClick={() => handleSelectAnswer(option)}

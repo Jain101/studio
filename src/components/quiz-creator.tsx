@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import type { QuizQuestion } from '@/lib/types';
 import { parseAnswerKey } from '@/lib/utils';
-import { Loader2, Wand2, FileText, UploadCloud, FileCheck2, X } from 'lucide-react';
+import { Loader2, Wand2, FileText, UploadCloud, FileCheck2, X, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as pdfjs from 'pdfjs-dist';
 
@@ -19,10 +19,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 type QuizCreatorProps = {
-  onGeneratedQuestions: (questions: QuizQuestion[]) => void;
+  onGeneratedQuestions: (questions: QuizQuestion[], pdfName: string) => void;
+  onViewHistory: () => void;
 };
 
-export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
+export function QuizCreator({ onGeneratedQuestions, onViewHistory }: QuizCreatorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -88,9 +89,8 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
       const numPages = pdf.numPages;
 
       let allQuestions: QuizQuestion[] = [];
-      let pagesProcessed = 0;
-
-      const processPage = async (pageNumber: number) => {
+      
+      const processPage = async (pageNumber: number): Promise<QuizQuestion[]> => {
         try {
           const page = await pdf.getPage(pageNumber);
           const viewport = page.getViewport({ scale: 2.0 });
@@ -106,8 +106,7 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
           }
         } catch (error) {
            console.error(`Error processing page ${pageNumber}:`, error);
-           // Return a promise that resolves to an empty array to not break Promise.all
-           return Promise.resolve([]);
+           return [];
         }
         return [];
       };
@@ -117,19 +116,14 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
         promises.push(processPage(i));
       }
 
-      for (const promise of promises) {
-        try {
-            const questionsFromPage = await promise;
-            if (questionsFromPage) {
-              allQuestions.push(...questionsFromPage);
-            }
-        } catch(e) {
-            console.error('Failed to process a page promise', e);
-        } finally {
-            pagesProcessed++;
-            setProgress((pagesProcessed / numPages) * 100);
+      const questionBatches = await Promise.allSettled(promises);
+      
+      questionBatches.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value) {
+           allQuestions.push(...result.value);
         }
-      }
+        setProgress(((index + 1) / numPages) * 100);
+      });
 
       let finalQuestions = allQuestions.map((q, index) => {
         const newQ = { ...q, id: crypto.randomUUID() };
@@ -146,7 +140,7 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
         return newQ;
       });
       
-      onGeneratedQuestions(finalQuestions);
+      onGeneratedQuestions(finalQuestions, pdfFile.name);
 
       toast({
         title: 'Success!',
@@ -162,14 +156,15 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
       });
     } finally {
       setIsGenerating(false);
-      // Keep progress at 100 on finish, reset on new upload
     }
   };
 
   return (
       <Card className="w-full transition-all">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Create a Quiz with AI</CardTitle>
+        <CardHeader className="text-center space-y-4">
+          <div className="flex items-center justify-center">
+            <CardTitle className="text-2xl font-bold">Create a Quiz with AI</CardTitle>
+          </div>
           <CardDescription>Upload a PDF document and we'll automatically generate quiz questions for you.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 px-4 sm:px-6 md:px-8">
@@ -216,7 +211,7 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
              <div className="fade-in w-full text-center">
                <p className="text-sm text-muted-foreground mb-2">Generating questions... {Math.round(progress)}%</p>
                <div className="w-full bg-secondary rounded-full h-2.5">
-                  <div className="bg-primary h-2.5 rounded-full" style={{ width: `${progress}%`, transition: 'width 0.5s ease-in-out' }}></div>
+                  <div className="bg-primary h-2.5 rounded-full" style={{ width: `${progress}%`, transition: 'width 0.2s ease-in-out' }}></div>
                </div>
              </div>
            )}
@@ -264,6 +259,13 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
               </>
             )}
           </Button>
+
+          <div className="flex justify-center">
+            <Button variant="link" onClick={onViewHistory}>
+              <History className="mr-2 h-4 w-4" />
+              View Quiz History
+            </Button>
+          </div>
         </CardContent>
       </Card>
   );

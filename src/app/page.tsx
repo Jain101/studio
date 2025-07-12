@@ -1,24 +1,27 @@
+
 "use client";
 
-import { useState } from 'react';
-import type { QuizQuestion } from '@/lib/types';
+import { useState, useEffect } from 'react';
+import type { QuizQuestion, QuizAttempt, UserAnswers } from '@/lib/types';
 import { AppHeader } from '@/components/app-header';
 import { QuizCreator } from '@/components/quiz-creator';
+import { QuizHistory } from '@/components/quiz-history';
 import { QuizList } from '@/components/quiz-list';
 import { QuizResults } from '@/components/quiz-results';
 import { QuizTaker } from '@/components/quiz-taker';
-import { Button } from '@/components/ui/button';
 import { AnimatePresence, motion } from 'framer-motion';
 
-type AppState = 'creating' | 'list' | 'taking' | 'results';
+type AppState = 'creating' | 'list' | 'taking' | 'results' | 'history' | 'dashboard';
 
 export default function Home() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [pdfName, setPdfName] = useState<string>('');
   const [appState, setAppState] = useState<AppState>('creating');
-  const [quizScore, setQuizScore] = useState<number | null>(null);
+  const [currentAttempt, setCurrentAttempt] = useState<QuizAttempt | null>(null);
 
-  const handleGeneratedQuestions = (newQuestions: QuizQuestion[]) => {
+  const handleGeneratedQuestions = (newQuestions: QuizQuestion[], name: string) => {
     setQuestions(newQuestions);
+    setPdfName(name);
     setAppState('list');
   };
   
@@ -26,19 +29,51 @@ export default function Home() {
     setAppState('taking');
   }
 
-  const handleQuizFinish = (score: number) => {
-    setQuizScore(score);
+  const handleQuizFinish = (score: number, userAnswers: UserAnswers) => {
+    const attempt: QuizAttempt = {
+      id: crypto.randomUUID(),
+      pdfName,
+      date: Date.now(),
+      questions,
+      score,
+      userAnswers,
+    };
+    
+    // Save to local storage
+    const history = JSON.parse(localStorage.getItem('quizHistory') || '[]') as QuizAttempt[];
+    history.unshift(attempt); // Add to the beginning
+    localStorage.setItem('quizHistory', JSON.stringify(history));
+
+    setCurrentAttempt(attempt);
     setAppState('results');
   };
   
   const handleRestartQuiz = () => {
-    setQuizScore(null);
     setAppState('taking'); 
   }
   
   const handleCreateNew = () => {
-    setQuizScore(null);
     setQuestions([]);
+    setPdfName('');
+    setCurrentAttempt(null);
+    setAppState('creating');
+  }
+
+  const handleViewHistory = () => {
+    setAppState('history');
+  }
+
+  const handleViewDashboard = (attempt: QuizAttempt) => {
+    setCurrentAttempt(attempt);
+    setAppState('dashboard');
+  }
+
+  const handleBackToHistory = () => {
+    setCurrentAttempt(null);
+    setAppState('history');
+  }
+  
+  const handleBackToCreator = () => {
     setAppState('creating');
   }
 
@@ -56,7 +91,7 @@ export default function Home() {
               transition={{ duration: 0.3 }}
               className="w-full max-w-3xl"
             >
-              <QuizCreator onGeneratedQuestions={handleGeneratedQuestions} />
+              <QuizCreator onGeneratedQuestions={handleGeneratedQuestions} onViewHistory={handleViewHistory} />
             </motion.div>
           )}
 
@@ -69,7 +104,7 @@ export default function Home() {
               transition={{ duration: 0.3 }}
               className="w-full max-w-4xl"
             >
-              <QuizList questions={questions} onStartQuiz={handleStartQuiz} onBack={handleCreateNew} />
+              <QuizList questions={questions} onStartQuiz={handleStartQuiz} onBack={handleCreateNew} pdfName={pdfName} />
             </motion.div>
           )}
 
@@ -86,21 +121,37 @@ export default function Home() {
             </motion.div>
           )}
 
-          {appState === 'results' && quizScore !== null && (
+          {(appState === 'results' || appState === 'dashboard') && currentAttempt && (
             <motion.div
-              key="results"
+              key={appState}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.4, type: "spring", stiffness: 100 }}
-              className="w-full max-w-2xl"
+              className="w-full max-w-4xl"
             >
                <QuizResults 
-                 score={quizScore} 
-                 totalQuestions={questions.length} 
+                 attempt={currentAttempt}
                  onRestart={handleRestartQuiz}
                  onCreateNew={handleCreateNew}
+                 onBackToHistory={appState === 'dashboard' ? handleBackToHistory : undefined}
                />
+            </motion.div>
+          )}
+
+          {appState === 'history' && (
+            <motion.div
+              key="history"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-4xl"
+            >
+              <QuizHistory 
+                onViewDashboard={handleViewDashboard} 
+                onBack={handleBackToCreator} 
+              />
             </motion.div>
           )}
         </AnimatePresence>
