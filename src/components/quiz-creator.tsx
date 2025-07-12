@@ -79,8 +79,7 @@ export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExisting
     
     setIsGenerating(true);
     clearExistingQuestions(); // Clear out old questions before generating new ones
-    let generatedCount = 0;
-
+    
     try {
       // 1. Read files on the client
       const reader = new FileReader();
@@ -100,32 +99,41 @@ export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExisting
       // 2. Get text chunks from server
       const chunks = await getPdfTextInChunks(pdfBase64);
 
-      // 3. Process chunks one by one to simulate streaming
-      for (const chunk of chunks) {
-        const generated = await generateQuizQuestionsFlow({ pdfText: chunk });
-        
-        let newQuestions = generated.map(q => ({ ...q, id: crypto.randomUUID() }));
+      // 3. Process chunks concurrently and stream results
+      let generatedQuestionCount = 0;
+      const allPromises = chunks.map(chunk => 
+        generateQuizQuestionsFlow({ pdfText: chunk })
+          .then(generated => {
+            let newQuestions = generated.map(q => ({ ...q, id: crypto.randomUUID() }));
 
-        // 4. Apply answer key if it exists
-        if (answerKey) {
-            newQuestions = newQuestions.map(q => {
-            const questionNumber = generatedCount + 1;
-            const correctAnswerLetter = answerKey[questionNumber];
-            if (correctAnswerLetter) {
-              const answerIndex = 'ABCD'.indexOf(correctAnswerLetter);
-              if (answerIndex !== -1 && q.options[answerIndex]) {
-                return { ...q, answer: q.options[answerIndex] };
-              }
+            // Apply answer key if it exists
+            if (answerKey) {
+              newQuestions = newQuestions.map(q => {
+                const questionNumber = generatedQuestionCount + 1;
+                const correctAnswerLetter = answerKey[questionNumber];
+                if (correctAnswerLetter) {
+                  const answerIndex = 'ABCD'.indexOf(correctAnswerLetter);
+                  if (answerIndex !== -1 && q.options[answerIndex]) {
+                    q.answer = q.options[answerIndex];
+                  }
+                }
+                generatedQuestionCount++;
+                return q;
+              });
             }
-            generatedCount++;
-            return q;
-          });
-        }
-        
-        if (newQuestions.length > 0) {
-            onGeneratedQuestions(newQuestions);
-        }
-      }
+
+            if (newQuestions.length > 0) {
+              onGeneratedQuestions(newQuestions);
+            }
+          })
+          .catch(error => {
+             console.error('Error generating questions for a chunk:', error);
+             // Optionally, show a toast for partial failure
+          })
+      );
+      
+      await Promise.all(allPromises);
+
       toast({
         title: 'Success!',
         description: `Successfully finished generating questions.`,
