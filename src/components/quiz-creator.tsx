@@ -29,6 +29,17 @@ const manualQuestionSchema = z.object({
   answerIndex: z.string().min(1, 'You must select a correct answer.'),
 });
 
+// Helper function to convert a File to a data URI
+const fileToDataUri = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+};
+
+
 export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExistingQuestions }: QuizCreatorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -80,46 +91,32 @@ export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExisting
     clearExistingQuestions();
     
     try {
-      // 1. Read files on the client as data URIs
-      const pdfPromise = new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => resolve(event.target?.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(pdfFile);
-      });
-
-      const answerKeyPromise = answerKeyFile ? answerKeyFile.text() : Promise.resolve(null);
-      const [pdfDataUri, answerKeyText] = await Promise.all([pdfPromise, answerKeyPromise]);
+      const pdfDataUri = await fileToDataUri(pdfFile);
+      const answerKeyText = answerKeyFile ? await answerKeyFile.text() : null;
       const answerKey = answerKeyText ? parseAnswerKey(answerKeyText) : null;
-
-      // 2. Generate questions from the full PDF
+      
       const generated = await generateQuizQuestionsFlow({ pdfDataUri });
-
-      // 3. Process and add questions
-      let newQuestions = generated.map((q, index) => {
+      
+      let finalQuestions = generated.map((q, index) => {
         const newQ = { ...q, id: crypto.randomUUID() };
-        
-        // Apply answer key if it exists
         if (answerKey) {
-            const questionNumber = index + 1;
-            const correctAnswerLetter = answerKey[questionNumber];
-            if (correctAnswerLetter) {
-                const answerIndex = 'ABCD'.indexOf(correctAnswerLetter);
-                if (answerIndex !== -1 && newQ.options[answerIndex]) {
-                    newQ.answer = newQ.options[answerIndex];
-                }
+          const questionNumber = index + 1;
+          const correctAnswerLetter = answerKey[questionNumber];
+          if (correctAnswerLetter) {
+            const answerIndex = 'ABCD'.indexOf(correctAnswerLetter);
+            if (answerIndex !== -1 && newQ.options[answerIndex]) {
+              newQ.answer = newQ.options[answerIndex];
             }
+          }
         }
         return newQ;
       });
-
-      if (newQuestions.length > 0) {
-        onGeneratedQuestions(newQuestions);
-      }
+      
+      onGeneratedQuestions(finalQuestions);
 
       toast({
         title: 'Success!',
-        description: `Successfully finished generating ${newQuestions.length} questions.`,
+        description: `Successfully finished generating ${finalQuestions.length} questions.`,
       });
 
     } catch (error) {
