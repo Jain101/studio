@@ -77,6 +77,11 @@ export function QuizCreator({ onGeneratedQuestions, onViewHistory }: QuizCreator
       return;
     }
     
+    // Request notification permission
+    if ("Notification" in window && Notification.permission !== "denied") {
+      await Notification.requestPermission();
+    }
+
     setIsGenerating(true);
     setProgress(0);
     
@@ -115,14 +120,20 @@ export function QuizCreator({ onGeneratedQuestions, onViewHistory }: QuizCreator
       for (let i = 1; i <= numPages; i++) {
         promises.push(processPage(i));
       }
-
-      const questionBatches = await Promise.allSettled(promises);
       
-      questionBatches.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value) {
-           allQuestions.push(...result.value);
+      let processedCount = 0;
+      const questionBatches = await Promise.all(
+        promises.map(p => p.then(res => {
+          processedCount++;
+          setProgress((processedCount / numPages) * 100);
+          return res;
+        }))
+      );
+      
+      questionBatches.forEach((result) => {
+        if (result) {
+           allQuestions.push(...result);
         }
-        setProgress(((index + 1) / numPages) * 100);
       });
 
       let finalQuestions = allQuestions.map((q, index) => {
@@ -142,10 +153,19 @@ export function QuizCreator({ onGeneratedQuestions, onViewHistory }: QuizCreator
       
       onGeneratedQuestions(finalQuestions, pdfFile.name);
 
+      const successMessage = `Successfully finished generating ${finalQuestions.length} questions.`;
       toast({
         title: 'Success!',
-        description: `Successfully finished generating ${finalQuestions.length} questions.`,
+        description: successMessage,
       });
+
+      // Show browser notification if permission is granted and tab is not active
+      if (Notification.permission === "granted" && document.hidden) {
+        new Notification("Quiz Ready!", {
+          body: `Your quiz from "${pdfFile.name}" is ready.`,
+          icon: "/favicon.ico", // You can replace this with a proper icon URL
+        });
+      }
 
     } catch (error) {
       console.error(error);
