@@ -55,7 +55,15 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
     e.stopPropagation();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setPdfFile(e.dataTransfer.files[0]);
+      if (e.dataTransfer.files[0].type === 'application/pdf') {
+        setPdfFile(e.dataTransfer.files[0]);
+      } else {
+        toast({
+          title: 'Invalid File Type',
+          description: 'Please upload a PDF file.',
+          variant: 'destructive',
+        });
+      }
     }
   };
   
