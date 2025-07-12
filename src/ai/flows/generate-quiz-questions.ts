@@ -63,6 +63,17 @@ export const generateQuizQuestionsFlow = ai.defineFlow(
     // For now, we are sending the whole text. 
     // We will implement chunking in a subsequent step if needed.
     const {output} = await generateQuizQuestionsPrompt({ context: pdfData.text });
-    return output!;
+
+    if (!output) {
+      return [];
+    }
+
+    // Filter out any incomplete objects that the model might have returned
+    // if its response was truncated.
+    const validQuestions = output.filter(q => 
+      q.question && q.options && q.answer && q.options.length > 0
+    );
+    
+    return validQuestions;
   }
 );
