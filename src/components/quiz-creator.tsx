@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, ChangeEvent, DragEvent, useRef } from 'react';
@@ -87,19 +88,26 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
       const numPages = pdf.numPages;
 
       let allQuestions: QuizQuestion[] = [];
+      let pagesProcessed = 0;
 
       const processPage = async (pageNumber: number) => {
-        const page = await pdf.getPage(pageNumber);
-        const viewport = page.getViewport({ scale: 2.0 });
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
+        try {
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale: 2.0 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
 
-        if (context) {
-          await page.render({ canvasContext: context, viewport: viewport }).promise;
-          const pageImage = canvas.toDataURL('image/png');
-          return generateQuizQuestionsFlow({ pageImage });
+          if (context) {
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            const pageImage = canvas.toDataURL('image/png');
+            return await generateQuizQuestionsFlow({ pageImage });
+          }
+        } catch (error) {
+           console.error(`Error processing page ${pageNumber}:`, error);
+           // Return a promise that resolves to an empty array to not break Promise.all
+           return Promise.resolve([]);
         }
         return [];
       };
@@ -109,16 +117,19 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
         promises.push(processPage(i));
       }
 
-      const results = await Promise.allSettled(promises);
-      
-      results.forEach((result, i) => {
-         if(result.status === 'fulfilled') {
-           allQuestions.push(...result.value);
-         } else {
-            console.error(`Failed to process page ${i+1}:`, result.reason);
-         }
-         setProgress(((i + 1) / numPages) * 100);
-      });
+      for (const promise of promises) {
+        try {
+            const questionsFromPage = await promise;
+            if (questionsFromPage) {
+              allQuestions.push(...questionsFromPage);
+            }
+        } catch(e) {
+            console.error('Failed to process a page promise', e);
+        } finally {
+            pagesProcessed++;
+            setProgress((pagesProcessed / numPages) * 100);
+        }
+      }
 
       let finalQuestions = allQuestions.map((q, index) => {
         const newQ = { ...q, id: crypto.randomUUID() };
@@ -151,7 +162,7 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
       });
     } finally {
       setIsGenerating(false);
-      setProgress(0);
+      // Keep progress at 100 on finish, reset on new upload
     }
   };
 
