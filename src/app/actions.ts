@@ -1,4 +1,5 @@
 'use server';
 
 // This file is intentionally left blank.
-// PDF parsing is now handled client-side and passed to the Genkit flow.
+// PDF processing is now handled by converting pages to images on the client
+// and sending them to the Genkit flow for multimodal analysis.

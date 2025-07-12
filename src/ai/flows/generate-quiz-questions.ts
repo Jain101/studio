@@ -12,10 +12,10 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const GenerateQuizQuestionsInputSchema = z.object({
-  pdfDataUri: z
+  pageImage: z
     .string()
     .describe(
-      "A PDF file encoded as a data URI. Expected format: 'data:application/pdf;base64,<encoded_data>'."
+      "A PNG image of a document page, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:image/png;base64,<encoded_data>'."
     ),
 });
 export type GenerateQuizQuestionsInput = z.infer<
@@ -39,10 +39,10 @@ const generateQuizQuestionsPrompt = ai.definePrompt({
   name: 'generateQuizQuestionsPrompt',
   input: {schema: GenerateQuizQuestionsInputSchema},
   output: {schema: GenerateQuizQuestionsOutputSchema},
-  prompt: `You are a quiz generator. Given the following document, create as many high-quality quiz questions as possible with multiple-choice answers. Pay close attention to text, images, diagrams, and equations in the document. Each question should have 4 options, with one correct answer. Prioritize questions that have direct answers in the provided text. Return the questions and answers as a JSON array.
+  prompt: `You are a quiz generator. Given the following document page image, create as many high-quality quiz questions as possible with multiple-choice answers. Pay close attention to text, images, diagrams, and equations in the document. Each question should have 4 options, with one correct answer. Prioritize questions that have direct answers on the page. Return the questions and answers as a JSON array. If there is no content on the page from which to create questions, return an empty array.
 
-Document:
-{{media url=pdfDataUri}}`,
+Document Page:
+{{media url=pageImage}}`,
 });
 
 export const generateQuizQuestionsFlow = ai.defineFlow(

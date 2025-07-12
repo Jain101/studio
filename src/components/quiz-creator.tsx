@@ -10,18 +10,15 @@ import type { QuizQuestion } from '@/lib/types';
 import { parseAnswerKey } from '@/lib/utils';
 import { Loader2, Wand2, FileText, UploadCloud, FileCheck2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import * as pdfjs from 'pdfjs-dist';
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString();
 
 type QuizCreatorProps = {
   onGeneratedQuestions: (questions: QuizQuestion[]) => void;
-};
-
-const fileToDataUri = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
 };
 
 export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
@@ -29,6 +26,7 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [answerKeyFile, setAnswerKeyFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState(0);
   const { toast } = useToast();
 
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -78,15 +76,51 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
     }
     
     setIsGenerating(true);
+    setProgress(0);
     
     try {
-      const pdfDataUri = await fileToDataUri(pdfFile);
       const answerKeyText = answerKeyFile ? await answerKeyFile.text() : null;
       const answerKey = answerKeyText ? parseAnswerKey(answerKeyText) : null;
       
-      const generated = await generateQuizQuestionsFlow({ pdfDataUri });
+      const fileBuffer = await pdfFile.arrayBuffer();
+      const pdf = await pdfjs.getDocument(fileBuffer).promise;
+      const numPages = pdf.numPages;
+
+      let allQuestions: QuizQuestion[] = [];
+
+      const processPage = async (pageNumber: number) => {
+        const page = await pdf.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        if (context) {
+          await page.render({ canvasContext: context, viewport: viewport }).promise;
+          const pageImage = canvas.toDataURL('image/png');
+          return generateQuizQuestionsFlow({ pageImage });
+        }
+        return [];
+      };
+
+      const promises = [];
+      for (let i = 1; i <= numPages; i++) {
+        promises.push(processPage(i));
+      }
+
+      const results = await Promise.allSettled(promises);
       
-      let finalQuestions = generated.map((q, index) => {
+      results.forEach((result, i) => {
+         if(result.status === 'fulfilled') {
+           allQuestions.push(...result.value);
+         } else {
+            console.error(`Failed to process page ${i+1}:`, result.reason);
+         }
+         setProgress(((i + 1) / numPages) * 100);
+      });
+
+      let finalQuestions = allQuestions.map((q, index) => {
         const newQ = { ...q, id: crypto.randomUUID() };
         if (answerKey) {
           const questionNumber = index + 1;
@@ -117,6 +151,7 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
       });
     } finally {
       setIsGenerating(false);
+      setProgress(0);
     }
   };
 
@@ -160,10 +195,19 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
                   <FileCheck2 className="w-5 h-5 text-green-600" />
                   <span className="font-medium text-sm truncate">{pdfFile.name}</span>
                 </div>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPdfFile(null)}>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setPdfFile(null); setProgress(0); }}>
                   <X className="w-4 h-4" />
                 </Button>
               </div>
+           )}
+          
+           {isGenerating && (
+             <div className="fade-in w-full text-center">
+               <p className="text-sm text-muted-foreground mb-2">Generating questions... {Math.round(progress)}%</p>
+               <div className="w-full bg-secondary rounded-full h-2.5">
+                  <div className="bg-primary h-2.5 rounded-full" style={{ width: `${progress}%`, transition: 'width 0.5s ease-in-out' }}></div>
+               </div>
+             </div>
            )}
 
            <div className="flex items-center gap-3">
@@ -171,12 +215,13 @@ export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
               variant="outline" 
               className="w-full justify-start" 
               onClick={() => answerKeyInputRef.current?.click()}
+              disabled={isGenerating}
             >
               {answerKeyFile ? <FileCheck2 className="mr-2 h-4 w-4 text-green-600" /> : <FileText className="mr-2 h-4 w-4" />}
               {answerKeyFile ? <span className="truncate">{answerKeyFile.name}</span> : 'Upload Answer Key (Optional)'}
             </Button>
             {answerKeyFile && (
-               <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => setAnswerKeyFile(null)}>
+               <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => setAnswerKeyFile(null)} disabled={isGenerating}>
                   <X className="w-4 h-4" />
                 </Button>
             )}
