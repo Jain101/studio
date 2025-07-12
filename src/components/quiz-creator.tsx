@@ -1,35 +1,20 @@
 "use client";
 
-import { useState, ChangeEvent } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { useState, ChangeEvent, DragEvent, useRef } from 'react';
 import { generateQuizQuestionsFlow } from '@/ai/flows/generate-quiz-questions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import type { QuizQuestion } from '@/lib/types';
 import { parseAnswerKey } from '@/lib/utils';
-import { Loader2, Wand2, PlusCircle, UploadCloud } from 'lucide-react';
+import { Loader2, Wand2, FileText, UploadCloud, FileCheck2, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 type QuizCreatorProps = {
-  onAddQuestion: (question: QuizQuestion) => void;
   onGeneratedQuestions: (questions: QuizQuestion[]) => void;
-  clearExistingQuestions: () => void;
 };
 
-const manualQuestionSchema = z.object({
-  question: z.string().min(10, 'Question must be at least 10 characters.'),
-  options: z.array(z.object({ value: z.string().min(1, "Option can't be empty.") })).length(4, 'There must be 4 options.'),
-  answerIndex: z.string().min(1, 'You must select a correct answer.'),
-});
-
-// Helper function to convert a File to a data URI
 const fileToDataUri = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -39,44 +24,41 @@ const fileToDataUri = (file: File): Promise<string> => {
     });
 };
 
-
-export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExistingQuestions }: QuizCreatorProps) {
+export function QuizCreator({ onGeneratedQuestions }: QuizCreatorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [answerKeyFile, setAnswerKeyFile] = useState<File | null>(null);
   const { toast } = useToast();
 
-  const form = useForm<z.infer<typeof manualQuestionSchema>>({
-    resolver: zodResolver(manualQuestionSchema),
-    defaultValues: {
-      question: '',
-      options: [{ value: '' }, { value: '' }, { value: '' }, { value: '' }],
-      answerIndex: '',
-    },
-  });
-
-  const { fields } = useFieldArray({
-    control: form.control,
-    name: "options"
-  });
-
-  const handleManualSubmit = (values: z.infer<typeof manualQuestionSchema>) => {
-    const newQuestion: QuizQuestion = {
-      id: crypto.randomUUID(),
-      question: values.question,
-      options: values.options.map(o => o.value),
-      answer: values.options[parseInt(values.answerIndex)].value,
-    };
-    onAddQuestion(newQuestion);
-    form.reset();
-  };
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const answerKeyInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>, setFile: (file: File | null) => void) => {
-    if (e.target.files) {
+    if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
     }
   };
 
+  const handleDrag = (e: DragEvent<HTMLDivElement>, enter: boolean) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (enter) {
+      setIsDragging(true);
+    } else {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setPdfFile(e.dataTransfer.files[0]);
+    }
+  };
+  
   const handleGenerate = async () => {
     if (!pdfFile) {
       toast({
@@ -88,7 +70,6 @@ export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExisting
     }
     
     setIsGenerating(true);
-    clearExistingQuestions();
     
     try {
       const pdfDataUri = await fileToDataUri(pdfFile);
@@ -132,100 +113,94 @@ export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExisting
   };
 
   return (
-    <div className="space-y-8">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><UploadCloud className="text-primary" /> Generate from Document</CardTitle>
-          <CardDescription>Upload a PDF and an optional answer key to generate a quiz with AI.</CardDescription>
+      <Card className="w-full transition-all">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl font-bold">Create a Quiz with AI</CardTitle>
+          <CardDescription>Upload a PDF document and we'll automatically generate quiz questions for you.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-           <div className="space-y-2">
-            <Label htmlFor="pdf-upload">PDF Document</Label>
-            <Input id="pdf-upload" type="file" accept=".pdf" onChange={e => handleFileChange(e, setPdfFile)} />
+        <CardContent className="space-y-6 px-4 sm:px-6 md:px-8">
+           
+           <div 
+             className={cn(
+                "relative flex flex-col items-center justify-center w-full p-8 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
+                isDragging ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+             )}
+             onDragEnter={(e) => handleDrag(e, true)}
+             onDragLeave={(e) => handleDrag(e, false)}
+             onDragOver={(e) => handleDrag(e, true)}
+             onDrop={handleDrop}
+             onClick={() => pdfInputRef.current?.click()}
+           >
+              <UploadCloud className="w-12 h-12 text-muted-foreground" />
+              <p className="mt-4 text-lg font-semibold">
+                {pdfFile ? 'PDF selected. Ready to generate!' : 'Drag & drop a PDF file here'}
+              </p>
+              <p className="text-muted-foreground">or click to browse</p>
+              <Input 
+                ref={pdfInputRef}
+                id="pdf-upload" 
+                type="file" 
+                accept=".pdf" 
+                onChange={e => handleFileChange(e, setPdfFile)} 
+                className="hidden" 
+              />
            </div>
-           <div className="space-y-2">
-            <Label htmlFor="answer-key-upload">Answer Key (Optional, .txt)</Label>
-            <Input id="answer-key-upload" type="file" accept=".txt" onChange={e => handleFileChange(e, setAnswerKeyFile)} />
+
+           {pdfFile && (
+              <div className="fade-in flex items-center justify-between p-3 bg-secondary rounded-lg">
+                <div className="flex items-center gap-3">
+                  <FileCheck2 className="w-5 h-5 text-green-600" />
+                  <span className="font-medium text-sm truncate">{pdfFile.name}</span>
+                </div>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPdfFile(null)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+           )}
+
+           <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              className="w-full justify-start" 
+              onClick={() => answerKeyInputRef.current?.click()}
+            >
+              {answerKeyFile ? <FileCheck2 className="mr-2 h-4 w-4 text-green-600" /> : <FileText className="mr-2 h-4 w-4" />}
+              {answerKeyFile ? <span className="truncate">{answerKeyFile.name}</span> : 'Upload Answer Key (Optional)'}
+            </Button>
+            {answerKeyFile && (
+               <Button variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0" onClick={() => setAnswerKeyFile(null)}>
+                  <X className="w-4 h-4" />
+                </Button>
+            )}
+            <Input 
+              ref={answerKeyInputRef}
+              id="answer-key-upload" 
+              type="file" 
+              accept=".txt" 
+              onChange={e => handleFileChange(e, setAnswerKeyFile)} 
+              className="hidden" 
+            />
            </div>
-          <Button onClick={handleGenerate} disabled={isGenerating || !pdfFile}>
+
+          <Button 
+            size="lg"
+            className="w-full text-lg py-6"
+            onClick={handleGenerate} 
+            disabled={isGenerating || !pdfFile}
+          >
             {isGenerating ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 Generating...
               </>
             ) : (
               <>
-                <Wand2 className="mr-2 h-4 w-4" />
-                Generate Questions
+                <Wand2 className="mr-2 h-5 w-5" />
+                Generate Quiz
               </>
             )}
           </Button>
         </CardContent>
       </Card>
-
-      <Separator />
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><PlusCircle className="text-primary" /> Add Manually</CardTitle>
-          <CardDescription>Create your own custom question.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleManualSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="question"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Question</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., What is the capital of France?" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="space-y-4">
-                <Label>Options & Correct Answer</Label>
-                <FormField
-                  control={form.control}
-                  name="answerIndex"
-                  render={({ field }) => (
-                    <FormItem>
-                       <FormControl>
-                        <RadioGroup onValueChange={field.onChange} defaultValue={field.value} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {fields.map((item, index) => (
-                            <FormField
-                              key={item.id}
-                              control={form.control}
-                              name={`options.${index}.value`}
-                              render={({ field: optionField }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <div className="flex items-center space-x-2">
-                                      <RadioGroupItem value={index.toString()} id={`option-${index}`} />
-                                      <Input placeholder={`Option ${index + 1}`} {...optionField} />
-                                    </div>
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          ))}
-                        </RadioGroup>
-                       </FormControl>
-                       <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <Button type="submit">Add Question</Button>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
-    </div>
   );
 }

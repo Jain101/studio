@@ -7,82 +7,103 @@ import { QuizCreator } from '@/components/quiz-creator';
 import { QuizList } from '@/components/quiz-list';
 import { QuizResults } from '@/components/quiz-results';
 import { QuizTaker } from '@/components/quiz-taker';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { AnimatePresence, motion } from 'framer-motion';
+
+type AppState = 'creating' | 'list' | 'taking' | 'results';
 
 export default function Home() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  const [activeTab, setActiveTab] = useState('create');
+  const [appState, setAppState] = useState<AppState>('creating');
   const [quizScore, setQuizScore] = useState<number | null>(null);
 
-  const handleAddQuestion = (question: QuizQuestion) => {
-    setQuestions(prev => [...prev, question]);
-  };
-
   const handleGeneratedQuestions = (newQuestions: QuizQuestion[]) => {
-    setQuestions(prev => [...prev, ...newQuestions]);
+    setQuestions(newQuestions);
+    setAppState('list');
   };
-
-  const handleDeleteQuestion = (id: string) => {
-    setQuestions(prev => prev.filter(q => q.id !== id));
-  };
+  
+  const handleStartQuiz = () => {
+    setAppState('taking');
+  }
 
   const handleQuizFinish = (score: number) => {
     setQuizScore(score);
-    setActiveTab('results');
+    setAppState('results');
   };
   
   const handleRestartQuiz = () => {
     setQuizScore(null);
-    setActiveTab('take'); 
+    setAppState('taking'); 
   }
   
   const handleCreateNew = () => {
     setQuizScore(null);
     setQuestions([]);
-    setActiveTab('create');
+    setAppState('creating');
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <AppHeader />
-      <main className="container mx-auto p-4 sm:p-6 md:p-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="create">1. Create Quiz</TabsTrigger>
-            <TabsTrigger value="take" disabled={questions.length === 0}>2. Take Quiz</TabsTrigger>
-            <TabsTrigger value="results" disabled={quizScore === null}>3. View Results</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="create" className="mt-6">
-            <div className="grid gap-8 lg:grid-cols-2">
-              <div className="space-y-8">
-                <QuizCreator 
-                  onAddQuestion={handleAddQuestion} 
-                  onGeneratedQuestions={handleGeneratedQuestions}
-                  clearExistingQuestions={() => setQuestions([])}
-                />
-              </div>
-              <div className="lg:max-h-[calc(100vh-220px)] lg:overflow-y-auto pr-4">
-                <QuizList questions={questions} onDeleteQuestion={handleDeleteQuestion} />
-              </div>
-            </div>
-          </TabsContent>
+      <main className="container mx-auto p-4 sm:p-6 md:p-8 flex-grow flex flex-col items-center">
+        <AnimatePresence mode="wait">
+          {appState === 'creating' && (
+            <motion.div
+              key="creating"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-3xl"
+            >
+              <QuizCreator onGeneratedQuestions={handleGeneratedQuestions} />
+            </motion.div>
+          )}
 
-          <TabsContent value="take" className="mt-6">
-            <QuizTaker questions={questions} onFinish={handleQuizFinish} />
-          </TabsContent>
+          {appState === 'list' && (
+            <motion.div
+              key="list"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-4xl"
+            >
+              <QuizList questions={questions} onStartQuiz={handleStartQuiz} onBack={handleCreateNew} />
+            </motion.div>
+          )}
 
-          <TabsContent value="results" className="mt-6">
-            {quizScore !== null && (
+          {appState === 'taking' && (
+             <motion.div
+              key="taking"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-3xl"
+            >
+              <QuizTaker questions={questions} onFinish={handleQuizFinish} />
+            </motion.div>
+          )}
+
+          {appState === 'results' && quizScore !== null && (
+            <motion.div
+              key="results"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.4, type: "spring", stiffness: 100 }}
+              className="w-full max-w-2xl"
+            >
                <QuizResults 
                  score={quizScore} 
                  totalQuestions={questions.length} 
                  onRestart={handleRestartQuiz}
                  onCreateNew={handleCreateNew}
                />
-            )}
-          </TabsContent>
-        </Tabs>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );
