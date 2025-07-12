@@ -5,7 +5,6 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { generateQuizQuestionsFlow } from '@/ai/flows/generate-quiz-questions';
-import { getPdfTextInChunks } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -78,66 +77,51 @@ export function QuizCreator({ onAddQuestion, onGeneratedQuestions, clearExisting
     }
     
     setIsGenerating(true);
-    clearExistingQuestions(); // Clear out old questions before generating new ones
+    clearExistingQuestions();
     
     try {
-      // 1. Read files on the client
-      const reader = new FileReader();
+      // 1. Read files on the client as data URIs
       const pdfPromise = new Promise<string>((resolve, reject) => {
-        reader.onload = (event) => {
-          const result = event.target?.result as string;
-          resolve(result.split(',')[1]); // Get base64 part
-        };
+        const reader = new FileReader();
+        reader.onload = (event) => resolve(event.target?.result as string);
         reader.onerror = reject;
         reader.readAsDataURL(pdfFile);
       });
 
       const answerKeyPromise = answerKeyFile ? answerKeyFile.text() : Promise.resolve(null);
-      const [pdfBase64, answerKeyText] = await Promise.all([pdfPromise, answerKeyPromise]);
+      const [pdfDataUri, answerKeyText] = await Promise.all([pdfPromise, answerKeyPromise]);
       const answerKey = answerKeyText ? parseAnswerKey(answerKeyText) : null;
 
-      // 2. Get text chunks from server
-      const chunks = await getPdfTextInChunks(pdfBase64);
+      // 2. Generate questions from the full PDF
+      const generated = await generateQuizQuestionsFlow({ pdfDataUri });
 
-      // 3. Process chunks concurrently and stream results
-      let generatedQuestionCount = 0;
-      const allPromises = chunks.map(chunk => 
-        generateQuizQuestionsFlow({ pdfText: chunk })
-          .then(generated => {
-            let newQuestions = generated.map(q => ({ ...q, id: crypto.randomUUID() }));
-
-            // Apply answer key if it exists
-            if (answerKey) {
-              newQuestions = newQuestions.map(q => {
-                const questionNumber = generatedQuestionCount + 1;
-                const correctAnswerLetter = answerKey[questionNumber];
-                if (correctAnswerLetter) {
-                  const answerIndex = 'ABCD'.indexOf(correctAnswerLetter);
-                  if (answerIndex !== -1 && q.options[answerIndex]) {
-                    q.answer = q.options[answerIndex];
-                  }
+      // 3. Process and add questions
+      let newQuestions = generated.map((q, index) => {
+        const newQ = { ...q, id: crypto.randomUUID() };
+        
+        // Apply answer key if it exists
+        if (answerKey) {
+            const questionNumber = index + 1;
+            const correctAnswerLetter = answerKey[questionNumber];
+            if (correctAnswerLetter) {
+                const answerIndex = 'ABCD'.indexOf(correctAnswerLetter);
+                if (answerIndex !== -1 && newQ.options[answerIndex]) {
+                    newQ.answer = newQ.options[answerIndex];
                 }
-                generatedQuestionCount++;
-                return q;
-              });
             }
+        }
+        return newQ;
+      });
 
-            if (newQuestions.length > 0) {
-              onGeneratedQuestions(newQuestions);
-            }
-          })
-          .catch(error => {
-             console.error('Error generating questions for a chunk:', error);
-             // Optionally, show a toast for partial failure
-          })
-      );
-      
-      await Promise.all(allPromises);
+      if (newQuestions.length > 0) {
+        onGeneratedQuestions(newQuestions);
+      }
 
       toast({
         title: 'Success!',
-        description: `Successfully finished generating questions.`,
+        description: `Successfully finished generating ${newQuestions.length} questions.`,
       });
+
     } catch (error) {
       console.error(error);
       toast({

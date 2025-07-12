@@ -7,7 +7,6 @@ import { QuizCreator } from '@/components/quiz-creator';
 import { QuizList } from '@/components/quiz-list';
 import { QuizResults } from '@/components/quiz-results';
 import { QuizTaker } from '@/components/quiz-taker';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function Home() {

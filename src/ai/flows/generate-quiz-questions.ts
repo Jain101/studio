@@ -3,7 +3,7 @@
 /**
  * @fileOverview This file defines a Genkit flow for automatically generating quiz questions from PDF content.
  *
- * - generateQuizQuestionsFlow - A flow that generates questions from a text chunk.
+ * - generateQuizQuestionsFlow - A flow that generates questions from a PDF document.
  * - GenerateQuizQuestionsInput - The input type for the generateQuizQuestions function.
  * - GenerateQuizQuestionsOutput - The return type for the generateQuizQuestions function.
  */
@@ -12,7 +12,11 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const GenerateQuizQuestionsInputSchema = z.object({
-  pdfText: z.string().describe('The text content extracted from the uploaded PDF.'),
+  pdfDataUri: z
+    .string()
+    .describe(
+      "A PDF file, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:application/pdf;base64,<encoded_data>'."
+    ),
 });
 export type GenerateQuizQuestionsInput = z.infer<
   typeof GenerateQuizQuestionsInputSchema
@@ -35,9 +39,9 @@ const generateQuizQuestionsPrompt = ai.definePrompt({
   name: 'generateQuizQuestionsPrompt',
   input: {schema: GenerateQuizQuestionsInputSchema},
   output: {schema: GenerateQuizQuestionsOutputSchema},
-  prompt: `You are a quiz generator. Given a text from a PDF document, create as many high-quality quiz questions as possible with multiple-choice answers. The text may be missing context from images, diagrams, or equations in the original document; do your best to create valid questions from the text provided. Each question should have 4 options, with one correct answer. Prioritize questions that have direct answers in the PDF. Return the questions and answers as a JSON array.
+  prompt: `You are a quiz generator. Given a PDF document, create as many high-quality quiz questions as possible with multiple-choice answers. Pay close attention to text, images, diagrams, and equations in the document. Each question should have 4 options, with one correct answer. Prioritize questions that have direct answers in the PDF. Return the questions and answers as a JSON array.
 
-PDF Content: {{{pdfText}}}`,
+PDF Document: {{media url=pdfDataUri}}`,
 });
 
 export const generateQuizQuestionsFlow = ai.defineFlow(
